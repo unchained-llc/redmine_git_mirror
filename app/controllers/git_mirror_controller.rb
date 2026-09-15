@@ -4,157 +4,60 @@ class GitMirrorController < ActionController::Base
   # Requests to this controller don't contain CSRF tokens
   skip_before_action :verify_authenticity_token
 
-  # abstract hook for repo update via remote url
-  def fetch
-    url = params[:url]
-    begin
-      RedmineGitMirror::URL.parse(url)
-    rescue
-      head 400
-      return
-    end
-    found = fetch_by_urls([url])
+  # Receive either GitLab or GitHub events for one repository.
+  def webhook_repository
+    repository = repository_from_webhook_path
+    head 404 and return unless repository
 
-    head found ? 202 : 404
-  end
+    if request.headers['X-Gitlab-Event'].present? || params[:event_name].present?
+      head 401 and return unless repository.webhook_secret.present? && verify_gitlab_signature(repository.webhook_secret)
+      head 200 and return unless request.post? && %w[push repository_update].include?(params[:event_name].to_s)
+      head 422 and return unless params[:project]
+      head fetch_webhook_repository(repository) ? 202 : 404
+    elsif request.headers['X-GitHub-Event'].present?
+      head 401 and return unless repository.webhook_secret.present? && verify_github_signature(repository.webhook_secret)
+      event = request.headers['X-GitHub-Event']
+      head 200 and return unless request.post? && event == 'push'
 
-  # process gitlab webhook request
-  def gitlab
-    unless RedmineGitMirror::Settings.gitlab_hook_enabled?
-      head 404
-      return
-    end
-
-    unless verify_gitlab_signature
-      Rails.logger.info "GitMirror: GitLab webhook signature verification failed"
-      head 401
-      return
-    end
-
-    event = params[:event_name]
-    unless request.post? && event
-      head 400
-      return
-    end
-
-    unless %w[push repository_update].include?(event.to_s)
-      head 200
-      return
-    end
-
-    project = params[:project]
-    unless project
-      head 422
-      return
-    end
-
-    urls = []
-
-    [:git_ssh_url, :git_http_url].each do |p|
-      url = project[p].to_s
-
-      urls.push(url) if url.length > 0
-    end
-
-    if urls.length <= 0
-      head 422
-      return
-    end
-
-    found = fetch_by_urls(urls)
-    head found ? 202 : 404
-  end
-
-  # process github webhook request
-  def github
-    unless RedmineGitMirror::Settings.github_hook_enabled?
-      head 404
-      return
-    end
-
-    unless verify_github_signature
-      Rails.logger.info "GitMirror: GitHub webhook signature verification failed"
-      head 401
-      return
-    end
-
-    event = request.headers["x-github-event"]
-    unless request.post? && event
-      head 400
-      return
-    end
-
-    unless %w[push].include?(event.to_s)
-      head 200
-      return
-    end
-
-    payload = params[:payload]
-
-    if payload && request.content_type != 'application/json'
-      payload = JSON.parse(payload, :symbolize_names => true)
+      payload = params[:payload]
+      payload = JSON.parse(payload, symbolize_names: true) if payload && request.content_type != 'application/json'
+      repository_data = (payload || params)[:repository]
+      head 422 and return unless repository_data
+      head fetch_webhook_repository(repository, repository_data) ? 202 : 404
     else
-      payload = params
+      head 400
     end
-
-    unless payload
-      head 422
-      return
-    end
-
-    repository = payload[:repository]
-    unless repository
-      head 422
-      return
-    end
-
-    urls = []
-
-    [:ssh_url, :clone_url, :git_url].each do |p|
-      url = repository[p].to_s
-
-      urls.push(url) if url.length > 0
-    end
-
-    if urls.length <= 0
-      head 422
-      return
-    end
-
-    found = fetch_by_urls(urls)
-    head found ? 202 : 404
   end
 
-  private def fetch_by_urls(urls)
-    urls_to_search = []
+  private def repository_from_webhook_path
+    project = Project.find_by(identifier: params[:project_identifier].to_s)
+    return nil unless project&.active?
 
-    urls.each do |url|
-      begin
-        urls_to_search.concat RedmineGitMirror::URL.parse(url).vary
-      rescue Exception => _
-        urls_to_search.push(url)
-      end
-    end
-
-    found = false
-    Repository::GitMirror.active.where(url: urls_to_search).find_each do |repository|
-      found = true unless found
-      repository.fetch()
-    end
-
-    found
+    Repository::GitMirror.active.where(project: project, identifier: params[:repository_identifier].to_s).first
   end
 
-  private def verify_gitlab_signature
-    expectedToken = RedmineGitMirror::Settings.gitlab_token
+  private def fetch_webhook_repository(repository, payload_repository = nil)
+    if payload_repository
+      urls = [:ssh_url, :clone_url, :git_url].filter_map { |key| payload_repository[key].presence }
+      return false if urls.empty? || !RedmineGitMirror::URL.parse(repository.url).vary.any? { |url| urls.include?(url) }
+    end
+
+    repository.fetch
+    true
+  rescue StandardError
+    false
+  end
+
+  private def verify_gitlab_signature(repository_secret = nil)
+    expectedToken = repository_secret.to_s
     return true unless expectedToken.present?
 
     token = request.headers["X-Gitlab-Token"]
     return expectedToken == token
   end
 
-  private def verify_github_signature
-    secretKey = RedmineGitMirror::Settings.github_secret_key
+  private def verify_github_signature(repository_secret = nil)
+    secretKey = repository_secret.to_s
     return true unless secretKey.present?
 
     signature = request.headers["X-Hub-Signature-256"]

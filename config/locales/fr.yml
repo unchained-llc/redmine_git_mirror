@@ -12,8 +12,3 @@ fr:
   label_https_git_example: "https://site/projet.git"
   label_ssh_git_example: "ssh://site/projet.git"
   label_scp_git_example: "git@site:projet.git"
-  label_hooks: Webhooks
-  label_enable_gitlab_hook: Activer le webhook GitLab
-  label_gitlab_token: Jeton GitLab
-  label_enable_github_hook: Activer le webhook GitHub
-  label_github_secret_key: Clé secrète GitHub

@@ -5,142 +5,38 @@ class HooksTest < Redmine::IntegrationTest
 
   setup do
     Setting.enabled_scm = %w(GitMirror)
-
     Repository.delete_all
 
-    r = Repository::GitMirror.new
-    r.url = 'https://github.com/linniksa/redmine_git_mirror.git'
-    r.project = Project.find(1)
-    r.save!
+    @repository = Repository::GitMirror.new
+    @repository.url = 'https://github.com/linniksa/redmine_git_mirror.git'
+    @repository.project = Project.find(1)
+    @repository.webhook_secret = 'test-secret'
+    @repository.save!
   end
 
   teardown do
     Repository.delete_all
   end
 
-  test 'github hook - json' do
-    post '/sys/git_mirror/github',
+  test 'repository webhook rejects an invalid secret' do
+    post '/sys/git_mirror/webhook/ecookbook/' + @repository.identifier,
          :params => {
            'repository' => {
-             'clone_url' => 'https://github.com/linniksa/redmine_git_mirror.git',
+             'clone_url' => @repository.url,
            }
          }.to_json,
          :headers => {
            'CONTENT_TYPE' => 'application/json',
            'X-GitHub-Event' => 'push',
+           'X-Hub-Signature-256' => 'sha256=invalid',
          }
 
-    assert_response 202
+    assert_response 401
   end
 
-  test 'github hook - url encoded' do
-    post '/sys/git_mirror/github',
-         :params => {
-           :payload => {
-             'repository' => {
-               'clone_url' => 'https://github.com/linniksa/redmine_git_mirror.git',
-             }
-           }.to_json,
-         },
-         :headers => {
-           'CONTENT_TYPE' => 'application/x-www-form-urlencoded',
-           'X-GitHub-Event' => 'push',
-         }
-
-    assert_response 202
-  end
-
-  test 'github hook unknown url' do
-    post '/sys/git_mirror/github',
-         :params => {
-           'repository' => {
-             'clone_url' => 'http://example.com/some.git',
-           }
-         }.to_json,
-         :headers => {
-           'CONTENT_TYPE' => 'application/json',
-           'X-GitHub-Event' => 'push',
-         }
+  test 'removed general hook endpoint does not exist' do
+    get '/sys/git_mirror/fetch', :params => { 'url' => @repository.url }
 
     assert_response 404
   end
-
-  test 'gitlab hook' do
-    post '/sys/git_mirror/gitlab',
-         :params => {
-           'event_name' => 'repository_update',
-           'project' => {
-             'git_http_url' => 'https://github.com/linniksa/redmine_git_mirror.git',
-           }
-         }.to_json,
-         :headers => {
-           "CONTENT_TYPE" => 'application/json',
-         }
-
-    assert_response 202
-  end
-
-  test 'gitlab hook without .git' do
-    post '/sys/git_mirror/gitlab',
-         :params => {
-           'event_name' => 'repository_update',
-           'project' => {
-             'git_http_url' => 'https://github.com/linniksa/redmine_git_mirror',
-           }
-         }.to_json,
-         :headers => {
-           "CONTENT_TYPE" => 'application/json',
-         }
-
-    assert_response 202
-  end
-
-  test 'gitlab hook unknown url' do
-    post '/sys/git_mirror/gitlab',
-         :params => {
-           'event_name' => 'repository_update',
-           'project' => {
-             'git_http_url' => 'http://example.com/some.git',
-           }
-         }.to_json,
-         :headers => {
-           "CONTENT_TYPE" => 'application/json',
-         }
-
-    assert_response 404
-  end
-
-  test 'general hook' do
-    get '/sys/git_mirror/fetch', :params => {
-      'url' => 'https://github.com/linniksa/redmine_git_mirror',
-    }
-
-    assert_response 202
-  end
-
-  test 'general hook short scheme' do
-    get '/sys/git_mirror/fetch', :params => {
-      'url' => '//github.com/linniksa/redmine_git_mirror',
-    }
-
-    assert_response 202
-  end
-
-  # can be changed in the future
-  test 'general hook without scheme' do
-    get '/sys/git_mirror/gitlab', :params => {
-      'url' => 'github.com/linniksa/redmine_git_mirror',
-    }
-
-    assert_response 404
-  end
-
-  test 'general hook unknown url' do
-    get '/sys/git_mirror/gitlab', :params => {
-      'url' => 'http://example.com/some.git',
-    }
-
-    assert_response 404
-  end
-
 end
