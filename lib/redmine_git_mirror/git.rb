@@ -5,11 +5,11 @@ module RedmineGitMirror
     class << self
       GIT_BIN = Redmine::Configuration['scm_git_command'] || 'git'
 
-      def check_remote_url(url)
+      def check_remote_url(url, ssh_key_path = nil)
         url = RedmineGitMirror::URL.parse(url)
         RedmineGitMirror::Ssh.ensure_host_known(url.host) if url.uses_ssh?
 
-        _, e = git 'ls-remote',  '-h', url.to_s, 'master'
+        _, e = git 'ls-remote',  '-h', url.to_s, 'master', ssh_key_path: ssh_key_path
         e
       end
 
@@ -32,7 +32,7 @@ module RedmineGitMirror
         e
       end
 
-      def init(clone_path, url)
+      def init(clone_path, url, ssh_key_path = nil)
         url = RedmineGitMirror::URL.parse(url)
         RedmineGitMirror::Ssh.ensure_host_known(url.host) if url.uses_ssh?
 
@@ -42,10 +42,10 @@ module RedmineGitMirror
 
           return "#{clone_path} remote url differs" unless o == url.to_s
         else
-          _, e = git "init", "--bare", clone_path
+          _, e = git "init", "--bare", clone_path, ssh_key_path: ssh_key_path
           return e if e
 
-          _, e = git "--git-dir", clone_path, "remote", "add", "origin", url.to_s
+          _, e = git "--git-dir", clone_path, "remote", "add", "origin", url.to_s, ssh_key_path: ssh_key_path
           return e if e
         end
 
@@ -57,11 +57,11 @@ module RedmineGitMirror
         ])
       end
 
-      def fetch(clone_path, url)
-        e = RedmineGitMirror::Git.init(clone_path, url)
+      def fetch(clone_path, url, ssh_key_path = nil)
+        e = RedmineGitMirror::Git.init(clone_path, url, ssh_key_path)
         return e if e
 
-        _, e = git "--git-dir", clone_path, "fetch", "--prune", "--all"
+        _, e = git "--git-dir", clone_path, "fetch", "--prune", "--all", ssh_key_path: ssh_key_path
         e
       end
 
@@ -100,9 +100,9 @@ module RedmineGitMirror
         nil
       end
 
-      private def git(*cmd)
+      private def git(*cmd, ssh_key_path: nil)
         s, e, status = Open3.capture3({
-          'GIT_SSH_COMMAND' => RedmineGitMirror::Ssh.command.to_s
+          'GIT_SSH_COMMAND' => RedmineGitMirror::Ssh.command(ssh_key_path).to_s
         }, GIT_BIN, *cmd)
         s.to_s.strip!
 

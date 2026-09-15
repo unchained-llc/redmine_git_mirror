@@ -46,7 +46,8 @@ Hooks is preferred way because you can immediately see changes of you repository
 
 ### GitLab hooks
 
-You can setup per-project or system wide hook, for both variants use `redmine.site/sys/git_mirror/gitlab` as `URL`
+Use the repository-specific URL shown on the GitMirror repository form:
+`redmine.site/sys/git_mirror/webhook/[redmine-project-identifier]/[repository-identifier]`.
 
 ###### For system wide setup
 
@@ -58,7 +59,6 @@ Go to `gitlab.site/user/project/settings/integrations`, and select only `Push` a
 
 ### GitHub hooks
 
-You can setup per-project or group wide hook, for both variants
-use `redmine.site/sys/git_mirror/github` as `Payload URL` and `Just the push event` option.
+The same URL accepts both GitLab and GitHub push events. Select only the push event and use the generated repository secret.
 
 Don't worry about `Content type` both `application/json` and `application/x-www-form-urlencoded` are supported.

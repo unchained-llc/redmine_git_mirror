@@ -1,4 +1,8 @@
 
+require 'etc'
+
+require 'shellwords'
+
 module RedmineGitMirror
   module Ssh
     class << self
@@ -29,12 +33,42 @@ module RedmineGitMirror
         end
       end
 
-      def command
-        'ssh -o UserKnownHostsFile=' + known_hosts_file
+      def command(key_path = nil)
+        command = ['ssh', '-o', "UserKnownHostsFile=#{Shellwords.escape(known_hosts_file)}"]
+        if key_path && !key_path.to_s.strip.empty?
+          command << '-o' << 'IdentitiesOnly=yes' << '-i' << Shellwords.escape(key_path.to_s.strip)
+        end
+        command.join(' ')
+      end
+
+      def generate_key(name)
+        safe_name = name.to_s.downcase.gsub(/[^a-z0-9._-]+/, '_').sub(/\A[._-]+/, '')
+        safe_name = 'repository' if safe_name.empty?
+        directory = File.join(ssh_home, '.ssh', 'gitmirror')
+        FileUtils.mkdir_p(directory, mode: 0700)
+
+        path = File.join(directory, safe_name)
+        path = File.join(directory, "#{safe_name}_#{Time.now.strftime('%Y%m%d%H%M%S')}") if File.exist?(path) || File.exist?(path + '.pub')
+
+        _, stderr, status = Open3.capture3(
+          'ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', path,
+          '-C', "redmine-git-mirror-#{safe_name}"
+        )
+        return nil, stderr.to_s.strip unless status.success?
+
+        File.chmod(0600, path)
+        File.chmod(0644, path + '.pub')
+        [path, File.read(path + '.pub').strip]
       end
 
       private def known_hosts_file
-        Dir.home + "/.ssh/known_hosts"
+        File.join(ssh_home, '.ssh', 'known_hosts')
+      end
+
+      private def ssh_home
+        home = ENV['HOME'].to_s
+        home = Etc.getpwuid(Process.uid).dir if home.empty? || home == '/'
+        home
       end
     end
   end

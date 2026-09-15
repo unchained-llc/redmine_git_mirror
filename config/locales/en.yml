@@ -3,6 +3,17 @@ en:
   button_view_on_github: View on GitHub
   button_view_on_gitlab: View on GitLab
   text_git_mirror_url_note: URL of remote repository.
+  text_git_mirror_ssh_key_path_note: Optional SSH private key path used only for this repository. Leave blank to use the default key.
+  label_git_mirror_ssh_public_key: SSH public key
+  text_git_mirror_ssh_public_key_note: Add this public key as a read-only Deploy key to the remote repository. The private key is never displayed.
+  button_git_mirror_generate_ssh_key: Generate SSH key
+  button_git_mirror_copy: Copy
+  text_git_mirror_copied: Copied
+  text_git_mirror_generating_ssh_key: Generating SSH key...
+  text_git_mirror_generated_ssh_key: SSH key generated
+  label_git_mirror_webhook_urls: Webhook URL (GitLab / GitHub)
+  button_git_mirror_generate_webhook_secret: Generate webhook secret
+  text_git_mirror_webhook_secret_note: Use this same value in the GitLab Secret token or GitHub webhook secret field.
   label_allow_users_to_change_url: Allow users to change URL (risky)
   label_prevent_adding_same_remove_url_twice: Prevent adding same remote url twice
   label_search_for_clones_in_all_url_schemes: Search for clones in all url schemes
@@ -12,8 +23,3 @@ en:
   label_https_git_example: "https://site/project.git"
   label_ssh_git_example: "ssh://site/project.git"
   label_scp_git_example: "git@site:project.git"
-  label_hooks: Hooks
-  label_enable_gitlab_hook: Enable GitLab hook
-  label_gitlab_token: GitLab Token
-  label_enable_github_hook: Enable GitHub hook
-  label_github_secret_key: GitHub Secret Key

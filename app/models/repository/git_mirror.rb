@@ -17,6 +17,7 @@ class Repository::GitMirror < Repository::Git
   safe_attributes 'url', :if => lambda { |repository, user|
     repository.new_record? || RedmineGitMirror::Settings.url_change_allowed?
   }
+  safe_attributes 'ssh_key_path', 'webhook_secret'
 
   def home_url
     m = url.match /(?<hostname>github\.com|gitlab\.com)[\/:](?<repository>.+)\.git$/
@@ -87,7 +88,7 @@ class Repository::GitMirror < Repository::Git
 
     self.url = parsed_url.normalize
 
-    err = RedmineGitMirror::Git.check_remote_url(self.url)
+    err = RedmineGitMirror::Git.check_remote_url(self.url, ssh_key_path)
     if err
       errors.add :url, err
       return
@@ -123,7 +124,7 @@ class Repository::GitMirror < Repository::Git
   private def init_repo
     return unless self.errors.empty?
 
-    err = RedmineGitMirror::Git.init(root_url, url)
+    err = RedmineGitMirror::Git.init(root_url, url, ssh_key_path)
     errors.add :url, err if err
   end
 
@@ -138,7 +139,7 @@ class Repository::GitMirror < Repository::Git
 
     puts "Fetching repo #{url} to #{root_url}"
 
-    err = RedmineGitMirror::Git.fetch(root_url, url)
+    err = RedmineGitMirror::Git.fetch(root_url, url, ssh_key_path)
     Rails.logger.warn 'Err with fetching: ' + err if err
 
     remove_unreachable_commits
