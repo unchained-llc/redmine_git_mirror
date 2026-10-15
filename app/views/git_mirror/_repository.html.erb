@@ -1,0 +1,32 @@
+<% if repository.new_record? %>
+  <% providers = RedmineGitMirror::Settings::PROVIDERS.select { |name| RedmineGitMirror::Settings.connected?(name) } %>
+  <% if User.current.admin? && providers.any? %>
+    <div class="git-mirror-picker"
+         data-github-url="<%= git_mirror_catalog_path(provider: 'github') %>"
+         data-gitlab-url="<%= git_mirror_catalog_path(provider: 'gitlab') %>"
+         data-loading="<%= l(:git_mirror_loading) %>"
+         data-empty="<%= l(:git_mirror_empty) %>"
+         data-unavailable="<%= l(:git_mirror_unavailable) %>">
+      <p><%= label_tag 'git_mirror_provider', l(:git_mirror_provider) %>
+        <%= select_tag 'git_mirror_provider', options_for_select(providers.map { |name| [name == 'github' ? 'GitHub' : 'GitLab', name] }) %></p>
+      <p><%= label_tag 'git_mirror_search', l(:label_search) %>
+        <%= search_field_tag 'git_mirror_search', nil, autocomplete: 'off', size: 50, placeholder: l(:git_mirror_search_placeholder), 'aria-controls' => 'git_mirror_repository' %></p>
+      <p><%= label_tag 'git_mirror_repository', l(:label_repository) %>
+        <%= select_tag 'git_mirror_repository', '', required: true, size: 8, class: 'git-mirror-list' %>
+        <span class="info git-mirror-status" role="status" aria-live="polite"></span></p>
+      <%= form.hidden_field :url %>
+      <noscript><p><%= l(:git_mirror_javascript_required) %></p></noscript>
+    </div>
+  <% else %>
+    <p class="warning"><%= l(User.current.admin? ? :git_mirror_connect_first : :git_mirror_admin_required) %>
+      <% if User.current.admin? %><%= link_to l(:label_settings), plugin_settings_path('redmine_git_mirror') %><% end %></p>
+  <% end %>
+<% else %>
+  <p><%= label_tag 'git_mirror_remote', 'URL' %><%= link_to repository.url, repository.home_url || '#' %></p>
+  <% if repository.setup_error.present? %>
+    <p class="warning"><%= l(:git_mirror_setup_pending, message: repository.setup_error) %></p>
+    <% if User.current.admin? %>
+      <p><%= link_to l(:git_mirror_retry), git_mirror_retry_path(repository), method: :post, class: 'button' %></p>
+    <% end %>
+  <% end %>
+<% end %>

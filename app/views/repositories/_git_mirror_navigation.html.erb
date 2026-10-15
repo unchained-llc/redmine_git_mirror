@@ -1,11 +1,3 @@
-<% if @repository.is_a? Repository::GitMirror %>
-    <%= link_to_function l(:button_copy_clone_url), 'copyTextToClipboard(this);', :class => 'icon icon-server-go', :title => @repository.url, data: {'clipboard-text' => @repository.url} %>
-
-    <% if home_url = @repository.home_url %>
-        <% if home_url.include? "github.com" %>
-            <%= link_to l(:button_view_on_github), @repository.home_url, :class => 'icon icon-github' %>
-        <% elsif home_url.include? "gitlab.com" %>
-            <%= link_to l(:button_view_on_gitlab), @repository.home_url, :class => 'icon icon-gitlab' %>
-        <% end %>
-    <% end %>
+<% if @repository.is_a?(Repository::GitMirror) && (url = @repository.home_url) %>
+  <%= link_to l(:git_mirror_view_remote), url, class: 'icon icon-external' %>
 <% end %>

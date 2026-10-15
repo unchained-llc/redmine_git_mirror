@@ -1,51 +1,28 @@
 require 'redmine'
-require_dependency File.dirname(__FILE__) + '/lib/redmine_git_mirror/hooks'
-require_dependency File.dirname(__FILE__) + '/lib/redmine_git_mirror/git'
-require_dependency File.dirname(__FILE__) + '/lib/redmine_git_mirror/ssh'
-require_dependency File.dirname(__FILE__) + '/lib/redmine_git_mirror/url'
-require_dependency File.dirname(__FILE__) + '/lib/redmine_git_mirror/settings'
+
+%w[http remote settings oauth provider ssh git auto_setup hooks].each do |name|
+  require_dependency File.join(__dir__, 'lib/redmine_git_mirror', name)
+end
 
 Redmine::Scm::Base.add 'GitMirror'
-
 Redmine::Plugin.register :redmine_git_mirror do
   name 'Git Mirror'
-  author 'Sergey Linnik'
-  description 'Add ability to create readonly mirror of remote git repository'
-  version '1.3.2'
+  author 'Sergey Linnik / UNCHAINED'
+  description 'Select a GitHub or GitLab repository to mirror in Redmine'
+  version '2.0.0'
   url 'https://github.com/linniksa/redmine_git_mirror'
-  author_url 'https://github.com/linniksa'
-
-  requires_redmine :version_or_higher => '5.0'
-
-  settings :default => RedmineGitMirror::Settings::DEFAULT, :partial => 'git_mirror/settings'
-
+  requires_redmine version_or_higher: '5.0'
+  settings default: RedmineGitMirror::Settings::DEFAULT, partial: 'git_mirror/settings'
 end
 
-redmine_git_mirror_patches = proc do
-  require 'repositories_helper'
-  require File.dirname(__FILE__) + '/lib/redmine_git_mirror/patches/repositories_helper_patch'
-
-  def include(klass, patch)
-    klass.send(:include, patch) unless klass.included_modules.include?(patch)
-  end
-
-  include(RepositoriesHelper, RedmineGitMirror::Patches::RepositoriesHelperPatch)
+Rails.application.config.filter_parameters |= %i[github_api_token gitlab_api_token webhook_secret access_token refresh_token client_secret code]
+# Redmine already runs this initializer in to_prepare: apply patches now.
+require_dependency 'settings_controller'
+require_dependency 'repositories_helper'
+require_dependency 'repositories_controller'
+%w[settings_controller repositories_controller repositories_helper].each do |name|
+  require_dependency File.join(__dir__, 'lib/redmine_git_mirror/patches', "#{name}_patch")
 end
-
-# Patches to the Redmine core.
-require 'dispatcher' unless Rails::VERSION::MAJOR >= 3
-
-# ActiveSupport::Reloader.to_prepare isn't used by Zeitwerk, hence include directly
-if Rails::VERSION::MAJOR >= 5
-  require 'repositories_helper'
-
-  def include(klass, patch)
-    klass.send(:include, patch) unless klass.included_modules.include?(patch)
-  end
-
-  include(RepositoriesHelper, RedmineGitMirror::Patches::RepositoriesHelperPatch)
-elsif Rails::VERSION::MAJOR >= 3
-  ActionDispatch::Callbacks.to_prepare &redmine_git_mirror_patches
-else
-  Dispatcher.to_prepare &redmine_git_mirror_patches
-end
+SettingsController.prepend(RedmineGitMirror::Patches::SettingsControllerPatch) unless SettingsController.ancestors.include?(RedmineGitMirror::Patches::SettingsControllerPatch)
+RepositoriesController.prepend(RedmineGitMirror::Patches::RepositoriesControllerPatch) unless RepositoriesController.ancestors.include?(RedmineGitMirror::Patches::RepositoriesControllerPatch)
+RepositoriesHelper.include(RedmineGitMirror::Patches::RepositoriesHelperPatch) unless RepositoriesHelper.ancestors.include?(RedmineGitMirror::Patches::RepositoriesHelperPatch)

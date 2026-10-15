@@ -1,36 +1,47 @@
-.icon-github { background-image: url(../images/github.png); }
-.icon-gitlab { background-image: url(../images/gitlab.png); }
-.icon-server-go { background-image: url(../images/server-go.png); }
+/* Set the visual order immediately; JS also aligns DOM and keyboard order. */
+#repository-form .box:has(> .git-mirror-picker) { display: flex; flex-direction: column; }
+#repository-form .box:has(> .git-mirror-picker) > p:has(#repository_scm) { order: 0; }
+#repository-form .box > .git-mirror-picker { order: 1; min-width: 0; }
+#repository-form .box:has(> .git-mirror-picker) > p:has(#repository_identifier) { order: 2; }
+#repository-form .box:has(> .git-mirror-picker) > p:has(#repository_is_default) { order: 3; }
 
-.git-mirror-field-with-copy,
-.git-mirror-field-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+#repository-form .git-mirror-picker p { margin-block: 12px; }
+#repository-form .box:has(> .git-mirror-picker) #repository_scm,
+#repository-form .git-mirror-picker #git_mirror_provider {
+  box-sizing: border-box;
+  min-width: 200px;
+  height: 42px;
+  min-height: 42px;
+  padding-block: 8px;
+}
+#repository-form .git-mirror-picker #git_mirror_search,
+#repository-form .git-mirror-picker .git-mirror-list {
+  box-sizing: border-box;
+  width: min(100%, 44rem);
   max-width: 100%;
+  border-radius: 8px;
+  font-size: 14px;
 }
-
-.git-mirror-field-with-copy textarea,
-.git-mirror-field-with-copy input[type="text"] {
-  flex: 0 1 auto;
+#repository-form .git-mirror-picker #git_mirror_search {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 42px;
+  padding-block: 9px;
+  border: 1px solid var(--unchianed-card-border, #dce0e8);
+  box-shadow: none;
 }
-
-.git-mirror-field-with-copy textarea {
-  vertical-align: middle;
-}
-
-.git-mirror-copy-button {
-  flex: 0 0 auto;
-  min-height: 30px !important;
-  margin: 0 !important;
-  padding: 4px 10px !important;
-  border: 1px solid #cfd6e4 !important;
-  border-radius: 4px !important;
-  background: #fff !important;
+#repository-form .git-mirror-picker select.git-mirror-list {
+  -webkit-appearance: none !important;
+  appearance: none !important;
   background-image: none !important;
-  box-shadow: none !important;
-  color: #4f6ff0 !important;
-  font-size: 12px !important;
-  line-height: 1.2 !important;
-  white-space: nowrap;
+  height: 280px;
+  min-height: 12rem;
+  padding: 6px !important;
 }
+#repository-form .git-mirror-picker .git-mirror-list option { padding: 9px 12px; border-radius: 4px; line-height: 1.5; }
+#repository-form .git-mirror-picker .git-mirror-list option:checked { background-color: rgba(111, 79, 232, .14); color: inherit; font-weight: 600; }
+#repository-form .git-mirror-picker :is(#git_mirror_search, .git-mirror-list):focus-visible { outline: 2px solid #7957ef; outline-offset: 2px; }
+.git-mirror-status { display: block; margin-top: .5rem; }
+.git-mirror-status:empty { display: none; }
+.git-mirror-token-settings { margin: 1rem 0; }
+.git-mirror-token-settings summary { cursor: pointer; }

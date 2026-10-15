@@ -1,70 +1,37 @@
+require 'openssl'
+require 'json'
 
 class GitMirrorController < ActionController::Base
-
-  # Requests to this controller don't contain CSRF tokens
-  skip_before_action :verify_authenticity_token
-
-  # Receive either GitLab or GitHub events for one repository.
+  skip_before_action :verify_authenticity_token, raise: false
   def webhook_repository
-    repository = repository_from_webhook_path
-    head 404 and return unless repository
+    project = Project.find_by(identifier: params[:project_identifier])
+    repository = project&.active? && Repository::GitMirror.find_by(project: project, identifier: params[:repository_identifier])
+    return head(:not_found) unless repository
+    secret = repository.webhook_secret.to_s
+    return head(:unauthorized) if secret.empty?
 
-    if request.headers['X-Gitlab-Event'].present? || params[:event_name].present?
-      head 401 and return unless repository.webhook_secret.present? && verify_gitlab_signature(repository.webhook_secret)
-      head 200 and return unless request.post? && %w[push repository_update].include?(params[:event_name].to_s)
-      head 422 and return unless params[:project]
-      head fetch_webhook_repository(repository) ? 202 : 404
-    elsif request.headers['X-GitHub-Event'].present?
-      head 401 and return unless repository.webhook_secret.present? && verify_github_signature(repository.webhook_secret)
-      event = request.headers['X-GitHub-Event']
-      head 200 and return unless request.post? && event == 'push'
-
-      payload = params[:payload]
-      payload = JSON.parse(payload, symbolize_names: true) if payload && request.content_type != 'application/json'
-      repository_data = (payload || params)[:repository]
-      head 422 and return unless repository_data
-      head fetch_webhook_repository(repository, repository_data) ? 202 : 404
+    if request.headers['X-GitHub-Event'].present?
+      expected = 'sha256=' + OpenSSL::HMAC.hexdigest('sha256', secret, request.raw_post)
+      return head(:unauthorized) unless Rack::Utils.secure_compare(expected, request.headers['X-Hub-Signature-256'].to_s)
+      return head(:ok) unless request.headers['X-GitHub-Event'] == 'push'
+      payload = params[:payload].is_a?(String) ? JSON.parse(params[:payload]) : params
+      remote = payload[:repository] || payload['repository'] || {}
+      urls = [remote[:ssh_url] || remote['ssh_url'], remote[:clone_url] || remote['clone_url']]
+    elsif request.headers['X-Gitlab-Event'].present?
+      return head(:unauthorized) unless Rack::Utils.secure_compare(secret, request.headers['X-Gitlab-Token'].to_s)
+      return head(:ok) unless %w[Push\ Hook Tag\ Push\ Hook Repository\ Update\ Hook].include?(request.headers['X-Gitlab-Event'])
+      remote = params[:project] || {}
+      urls = [remote[:git_ssh_url], remote[:git_http_url], remote[:ssh_url], remote[:http_url]]
     else
-      head 400
+      return head(:bad_request)
     end
-  end
-
-  private def repository_from_webhook_path
-    project = Project.find_by(identifier: params[:project_identifier].to_s)
-    return nil unless project&.active?
-
-    Repository::GitMirror.active.where(project: project, identifier: params[:repository_identifier].to_s).first
-  end
-
-  private def fetch_webhook_repository(repository, payload_repository = nil)
-    if payload_repository
-      urls = [:ssh_url, :clone_url, :git_url].filter_map { |key| payload_repository[key].presence }
-      return false if urls.empty? || !RedmineGitMirror::URL.parse(repository.url).vary.any? { |url| urls.include?(url) }
-    end
-
-    repository.fetch
-    true
-  rescue StandardError
-    false
-  end
-
-  private def verify_gitlab_signature(repository_secret = nil)
-    expectedToken = repository_secret.to_s
-    return true unless expectedToken.present?
-
-    token = request.headers["X-Gitlab-Token"]
-    return expectedToken == token
-  end
-
-  private def verify_github_signature(repository_secret = nil)
-    secretKey = repository_secret.to_s
-    return true unless secretKey.present?
-
-    signature = request.headers["X-Hub-Signature-256"]
-    return false unless signature.present?
-
-    digest = OpenSSL::Digest.new("sha256")
-    expected_signature = "sha256=" + OpenSSL::HMAC.hexdigest(digest, secretKey, request.raw_post)
-    return Rack::Utils.secure_compare(expected_signature, signature)
+    return head(:unprocessable_entity) unless urls.compact.any? { |url| RedmineGitMirror::Remote.same?(repository.url, url) }
+    repository.sync!
+    head(:accepted)
+  rescue JSON::ParserError
+    head(:bad_request)
+  rescue RedmineGitMirror::Error => error
+    Rails.logger.warn("Git Mirror webhook: #{error.message}")
+    head(:service_unavailable)
   end
 end

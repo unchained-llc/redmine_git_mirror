@@ -49,3 +49,11 @@ jobs:
 
       - name: Run tests
         run: CHROMIUM_BIN=$(which chrome) test/docker/redmine/run-tests.sh
+
+      - name: Run isolated provider tests
+        run: ruby test/standalone/auto_setup_test.rb
+
+      - name: Check Zeitwerk constants
+        run: |
+          cd $REDMINE_DIR
+          bundle exec ruby plugins/redmine_git_mirror/test/standalone/zeitwerk_check.rb

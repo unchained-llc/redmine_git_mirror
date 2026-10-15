@@ -1,197 +1,164 @@
+require 'securerandom'
 
 class Repository::GitMirror < Repository::Git
+  before_validation :prepare_attributes, on: :create
+  validate :validate_creation, on: :create
+  validate :validate_location, on: :update
+  before_create :provision_mirror
+  after_create_commit :complete_setup
+  before_destroy :remove_remote_connection, prepend: true
+  after_destroy_commit :remove_local_files
 
-  before_validation :validate_and_normalize_url, on: [:create, :update]
-  before_validation :set_defaults, on: :create
-  after_validation :init_repo, on: :create
-  after_commit :fetch, on: :create
+  scope :active, -> { joins(:project).merge(Project.active) }
 
-  after_validation :update_remote_url, on: :update
+  # Credentials and on-disk locations are always managed internally.
+  def safe_attribute_names(user = nil)
+    super - %w[ssh_key_path webhook_secret root_url] - (new_record? ? [] : ['url'])
+  end
 
-  before_destroy :remove_repo
+  def self.scm_name
+    'Git Mirror'
+  end
 
-  scope :active, lambda {
-    joins(:project).merge(Project.active)
-  }
+  def self.human_attribute_name(attribute, *args)
+    Repository.human_attribute_name(attribute, *args)
+  end
 
-  safe_attributes 'url', :if => lambda { |repository, user|
-    repository.new_record? || RedmineGitMirror::Settings.url_change_allowed?
-  }
-  safe_attributes 'ssh_key_path', 'webhook_secret'
+  def self.fetch
+    active.find_each(&:fetch)
+  end
 
   def home_url
-    m = url.match /(?<hostname>github\.com|gitlab\.com)[\/:](?<repository>.+)\.git$/
-
-    m ? 'https://' + m[:hostname] + '/' + m[:repository] : nil
+    remote = RedmineGitMirror::Remote.new(url)
+    origin = remote.host == 'github.com' ? 'https://github.com' : RedmineGitMirror::Settings.gitlab_url
+    prefix = URI.parse(origin).path.sub(%r{\A/}, '') + '/'
+    path = prefix == '/' ? remote.path : remote.path.delete_prefix(prefix)
+    "#{origin}/#{path}"
+  rescue RedmineGitMirror::Error, ArgumentError
+    nil
   end
 
-  private def update_remote_url
-    return unless self.errors.empty?
-    return unless self.url_changed?
-
-    r, err = RedmineGitMirror::Git.get_remote_url(root_url)
-    if err
-      errors.add :url, err
-      return
-    end
-
-    return if r == url
-
-    err = RedmineGitMirror::Git.set_remote_url(root_url, url)
-    errors.add :url, err if err
+  def setup_error
+    (extra_info || {})['git_mirror_error']
   end
 
-  private def remove_repo
-    root_url = self.root_url.to_s
-
-    return if root_url.empty?
-    return if root_url == '/'
-    return if root_url.to_s.length <= 15
-
-    # check git dirs and files
-    return unless File.exist? root_url + '/config'
-    return unless Dir.exist? root_url + '/objects'
-
-    FileUtils.rm_rf root_url
+  # Redmine's automatic view-time import must not trigger a network fetch.
+  def fetch_changesets(force = false)
+    super() if force
   end
 
-  private def validate_and_normalize_url
-    return unless self.new_record? || self.url_changed?
-
-    url = self.url.to_s.strip
-
-    return if url.to_s.empty?
-
-    begin
-      parsed_url = RedmineGitMirror::URL.parse(url)
-    rescue Exception => msg
-      errors.add :url, msg.to_s
-      return
-    end
-
-    unless parsed_url.remote?
-      errors.add :url, 'should be remote url'
-      return
-    end
-
-    unless parsed_url.scheme?(*RedmineGitMirror::Settings.allowed_schemes)
-      s = RedmineGitMirror::Settings.allowed_schemes
-      err = s.empty?? 'no allowed schemes' : "scheme not allowed, only #{s.join', '} is allowed"
-      errors.add :url, err
-      return
-    end
-
-    if parsed_url.has_credential?
-      errors.add :url, 'cannot use credentials'
-      return
-    end
-
-    self.url = parsed_url.normalize
-
-    err = RedmineGitMirror::Git.check_remote_url(self.url, ssh_key_path)
-    if err
-      errors.add :url, err
-      return
-    end
-
-    if RedmineGitMirror::Settings.prevent_multiple_clones?
-      urls = RedmineGitMirror::URL.parse(url).vary(
-        :all => RedmineGitMirror::Settings.search_clones_in_all_schemes?
-      )
-
-      if Repository::GitMirror.where(url: urls).where.not(id: self.id).exists?
-        errors.add :url, 'is already mirrored in redmine'
-        return
+  def sync!
+    RedmineGitMirror::Git.fetch(root_url, url, ssh_key_path) do
+      commits = RedmineGitMirror::Git.unreachable_commits(root_url)
+      unless commits.empty?
+        heads = (extra_info || {})['heads']
+        merge_extra_info('heads' => heads - commits) if heads.is_a?(Array)
+        Changeset.where(repository: self, revision: commits).destroy_all
       end
+      fetch_changesets(true)
     end
-  end
-
-  private def set_defaults
-    return unless self.errors.empty? && !url.to_s.empty?
-
-    parsed_url = RedmineGitMirror::URL.parse(url)
-    if identifier.empty?
-      identifier = File.basename(parsed_url.path, ".*")
-      self.identifier = identifier if /^[a-z][a-z0-9_-]*$/.match(identifier)
-    end
-
-    self.root_url = RedmineGitMirror::Settings.path + '/' +
-      Time.now.strftime("%Y%m%d%H%M%S%L") +
-      "_" +
-      (parsed_url.host + parsed_url.path.gsub(/\.git$/, '')).gsub(/[\\\/]+/, '_').gsub(/[^A-Za-z._-]/, '')[0..64]
-  end
-
-  private def init_repo
-    return unless self.errors.empty?
-
-    err = RedmineGitMirror::Git.init(root_url, url, ssh_key_path)
-    errors.add :url, err if err
-  end
-
-  def fetch_changesets(fetch = false)
-    return unless fetch
-    super()
+    true
   end
 
   def fetch
-    return if @fetched
-    @fetched = true
+    sync!
+  rescue RedmineGitMirror::Error => error
+    Rails.logger.warn("Git Mirror #{id}: #{error.message}")
+    false
+  end
 
-    puts "Fetching repo #{url} to #{root_url}"
+  def retry_setup!
+    RedmineGitMirror::AutoSetup.prepare(self)
+    save!
+    complete_setup
+  end
 
-    err = RedmineGitMirror::Git.fetch(root_url, url, ssh_key_path)
-    Rails.logger.warn 'Err with fetching: ' + err if err
+  private
 
-    remove_unreachable_commits
+  def prepare_attributes
+    remote = RedmineGitMirror::Remote.new(url)
+    if identifier.to_s.empty?
+      value = remote.path.split('/').last.downcase.gsub(/[^a-z0-9_-]+/, '-')
+      value = "repo-#{value}" unless value.match?(/\A[a-z]/)
+      self.identifier = value[0, Repository::IDENTIFIER_MAX_LENGTH]
+    end
+    self.root_url = File.join(RedmineGitMirror::Settings.path, SecureRandom.uuid) if root_url.to_s.empty?
+  rescue ArgumentError
+    errors.add(:url, :invalid)
+  end
+
+  def validate_creation
+    errors.add(:base, I18n.t(:git_mirror_admin_required)) unless User.current.admin?
+    errors.add(:url, :blank) if url.to_s.empty?
+    return unless errors.empty?
+    RedmineGitMirror::Provider.new(url)
+    if self.class.where(project_id: project_id).any? { |other| RedmineGitMirror::Remote.same?(other.url, url) }
+      errors.add(:url, I18n.t(:git_mirror_already_added))
+    end
+  rescue RedmineGitMirror::Error => error
+    errors.add(:base, error.message)
+  end
+
+  def validate_location
+    errors.add(:root_url, :invalid) if root_url_changed?
+    if url_changed? && !RedmineGitMirror::Remote.same?(url_was, url)
+      errors.add(:url, :invalid)
+    end
+  end
+
+  def provision_mirror
+    RedmineGitMirror::AutoSetup.prepare(self)
+  rescue RedmineGitMirror::Error, SystemCallError, IOError => error
+    errors.add(:base, I18n.t(:git_mirror_setup_failed, message: error.message))
+    throw :abort
+  end
+
+  def complete_setup
+    # The row and secret are committed before the provider sends its first ping.
     fetch_changesets(true)
+    callback = RedmineGitMirror::AutoSetup.webhook(self)
+    store_setup_error(nil, webhook_url: callback)
+    true
+  rescue RedmineGitMirror::Error => error
+    store_setup_error(error.message)
+    false
+  rescue StandardError => error
+    Rails.logger.error("Git Mirror setup #{id}: #{error.class}")
+    store_setup_error(I18n.t(:git_mirror_import_failed))
+    false
   end
 
-  private def remove_unreachable_commits
-    commits, e = RedmineGitMirror::Git.unreachable_commits(root_url)
-    if e
-      Rails.logger.warn 'Err when fetching unreachable commits: ' + e
-      return
-    end
-
-    return if commits.empty?
-
-    # remove commits from heads extra info
-    h = extra_info ? extra_info["heads"] : nil
-    if h
-      h1 = h.dup
-      commits.each { |c| h1.delete(c) }
-
-      if h1.length != h.length
-        n = {}
-        n["heads"] = h1
-
-        merge_extra_info(n)
-        save
-      end
-    end
-
-    Changeset.where(repository: self, revision: commits).destroy_all
-
-    RedmineGitMirror::Git.prune(root_url) if commits.length >= 10
+  def store_setup_error(message, webhook_url: nil)
+    info = (extra_info || {}).merge('git_mirror_error' => message)
+    info['git_mirror_webhook_url'] = webhook_url if webhook_url
+    update_column(:extra_info, info)
   end
 
-  class << self
-    def scm_name
-      'Git Mirror'
-    end
-
-    def human_attribute_name(attribute_key_name, *args)
-      attr_name = attribute_key_name.to_s
-
-      Repository.human_attribute_name(attr_name, *args)
-    end
-
-    # Fetches new changes for all git mirror repositories in active projects
-    # Can be called periodically by an external script
-    # eg. bin/rails runner "Repository::GitMirror.fetch"
-    def fetch
-      Repository::GitMirror.active.find_each(&:fetch)
-    end
+  def remove_mirror
+    path = root_url.to_s
+    return if path.empty? || path == '/' || path.length <= 15 || File.symlink?(path)
+    return unless File.file?(File.join(path, 'HEAD')) && File.directory?(File.join(path, 'objects'))
+    FileUtils.rm_rf(path)
   end
 
+  def remove_remote_connection
+    shared_key = ssh_key_path.present? && self.class.where(ssh_key_path: ssh_key_path).where.not(id: id).exists?
+    key = ssh_key_path.present? && !shared_key ? RedmineGitMirror::Ssh.public_key(ssh_key_path) : nil
+    RedmineGitMirror::Provider.new(url).remove_connection(
+      (extra_info || {})['git_mirror_webhook_url'] || RedmineGitMirror::Settings.webhook_url(project.identifier, identifier),
+      public_key: key, title: "Redmine #{project.identifier}/#{identifier}"
+    )
+  rescue RedmineGitMirror::Error, SystemCallError, IOError => error
+    errors.add(:base, I18n.t(:git_mirror_delete_failed, message: error.message))
+    throw :abort
+  end
+
+  def remove_local_files
+    remove_mirror
+    if ssh_key_path.present? && !self.class.where(ssh_key_path: ssh_key_path).exists?
+      RedmineGitMirror::Ssh.remove_key(ssh_key_path)
+    end
+  rescue SystemCallError, IOError => error
+    Rails.logger.error("Git Mirror #{id}: local cleanup failed (#{error.class})")
+  end
 end

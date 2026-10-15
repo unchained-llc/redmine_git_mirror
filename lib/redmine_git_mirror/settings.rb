@@ -1,62 +1,88 @@
-
-require 'singleton'
+require 'uri'
 
 module RedmineGitMirror
   module Settings
-    DEFAULT = {
-      :schemes => %w[http https scp],
-      :url_change_allowed => false,
-      :prevent_multiple_clones => true,
-      :custom_path => nil,
-      :search_clones_in_all_schemes => true,
-    }.freeze
+    PROVIDERS = %w[github gitlab].freeze
+    DEFAULT = {custom_path: nil, github_api_token: '', gitlab_api_token: '', gitlab_url: 'https://gitlab.com'}.freeze
 
     class << self
-      def default_path
-        File.expand_path(File.dirname(__FILE__) + '/../../repos/')
-      end
-
-      def custom_path
-        self[:custom_path]
+      def [](key)
+        values = Setting.plugin_redmine_git_mirror || {}
+        values.fetch(key.to_s) { values.fetch(key.to_sym) { DEFAULT[key.to_sym] } }
       end
 
       def path
-        path = self.custom_path.to_s.strip
-        return self.default_path if path.empty? || path == '/'
-
-        File.expand_path(path)
+        value = self[:custom_path].to_s.strip
+        value.empty? || value == '/' ? default_path : File.expand_path(value)
       end
 
-      def allowed_schemes
-        self[:schemes] || []
+      def default_path
+        # Keep mirrors outside the plugin directory so code updates cannot remove them.
+        File.join(Rails.root.to_s, 'files', 'git_mirrors')
       end
 
-      def url_change_allowed?
-        s = self[:url_change_allowed] || false
-
-        s == true || s.to_s == '1'
+      def gitlab_url
+        value = self[:gitlab_url].to_s.strip.sub(%r{/+\z}, '')
+        uri = URI.parse(value)
+        raise Error, 'GitLab URL must use HTTPS' unless uri.scheme == 'https' && uri.host && !uri.userinfo && !uri.query && !uri.fragment
+        value
+      rescue URI::InvalidURIError
+        raise Error, 'Invalid GitLab URL'
       end
 
-      def prevent_multiple_clones?
-        s = self[:prevent_multiple_clones] || false
-
-        s == true || s.to_s == '1'
+      def site_url
+        base = "#{Setting.protocol}://#{Setting.host_name}".sub(%r{/+\z}, '')
+        uri = URI.parse(base)
+        raise Error, 'Configure the Redmine host name and protocol' unless %w[http https].include?(uri.scheme) && uri.host && !uri.userinfo && !uri.query && !uri.fragment
+        root = Rails.application.config.relative_url_root.to_s.sub(%r{/+\z}, '')
+        base += root unless root.empty? || uri.path.to_s.sub(%r{/+\z}, '') == root
+        base
+      rescue URI::InvalidURIError
+        raise Error, 'Invalid Redmine host name'
       end
 
-      def search_clones_in_all_schemes?
-        s = self[:search_clones_in_all_schemes] || false
-
-        s == true || s.to_s == '1'
+      def webhook_url(project, repository)
+        "#{site_url}/sys/git_mirror/webhook/#{project}/#{repository}"
       end
 
-      private def [](key)
-        key = key.intern if key.is_a?(String)
-        settings = Setting[:plugin_redmine_git_mirror] || {}
+      def connected?(provider)
+        !self["#{provider}_api_token"].to_s.empty? || !self["#{provider}_oauth"].to_s.empty?
+      end
 
-        return settings[key] if settings.key?(key)
-        return settings[key.to_s] if settings.key?(key.to_s)
+      def api_token(provider)
+        oauth = self["#{provider}_oauth"].to_s
+        oauth.empty? ? decrypt(self["#{provider}_api_token"].to_s) : Oauth.access_token(provider)
+      end
 
-        DEFAULT[key]
+      def encrypt(value)
+        encryptor.encrypt_and_sign(value)
+      end
+
+      def decrypt(value)
+        return '' if value.empty?
+        encryptor.decrypt_and_verify(value)
+      rescue ActiveSupport::MessageEncryptor::InvalidMessage
+        raise Error, 'Cannot decrypt the connection. Reconnect in the Git Mirror settings.'
+      end
+
+      def update
+        Setting.transaction do
+          row = Setting.find_by(name: 'plugin_redmine_git_mirror')
+          row.lock! if row
+          Setting.clear_cache
+          values = (Setting.plugin_redmine_git_mirror || {}).deep_dup.stringify_keys
+          yield values
+          Setting.plugin_redmine_git_mirror = values
+          Setting.clear_cache
+        end
+      end
+
+      private
+
+      def encryptor
+        require 'active_support/message_encryptor'
+        key = Rails.application.key_generator.generate_key('redmine_git_mirror/api_tokens', 32)
+        ActiveSupport::MessageEncryptor.new(key)
       end
     end
   end

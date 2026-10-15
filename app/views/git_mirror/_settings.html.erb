@@ -1,81 +1,34 @@
-<!--
-For better look i use small hack, sorry about that
--->
-<%= '</div>'.html_safe %>
-<style type="text/css">
-  #settings div.box.settings { display: none}
-</style>
-<!---->
-
-<fieldset class="box tabular settings">
-  <legend><%= l(:label_general) %></legend>
-
-  <p>
-    <label for="url_change_allowed">
-      <%= l(:label_allow_users_to_change_url) %>
-    </label>
-    <%= hidden_field_tag "settings[url_change_allowed]", 0 %>
-    <%= check_box_tag "settings[url_change_allowed]", 1, RedmineGitMirror::Settings.url_change_allowed?,
-        :id => 'url_change_allowed'
-    %>
-  </p>
-
-  <p>
-    <label for="prevent_multiple_clones">
-      <%= l(:label_prevent_adding_same_remove_url_twice) %>
-    </label>
-    <%= hidden_field_tag "settings[prevent_multiple_clones]", 0 %>
-    <%= check_box_tag "settings[prevent_multiple_clones]", 1, RedmineGitMirror::Settings.prevent_multiple_clones?,
-        :id => 'prevent_multiple_clones',
-        :data => {:shows => '.prevent_multiple_clones_shows'}
-    %>
-  </p>
-
-  <p class="prevent_multiple_clones_shows">
-    <label for="search_clones_by_all_schemes">
-      <%= l(:label_search_for_clones_in_all_url_schemes) %>
-    </label>
-    <%= hidden_field_tag "settings[search_clones_in_all_schemes]", 0 %>
-    <%= check_box_tag "settings[search_clones_in_all_schemes]", 1, RedmineGitMirror::Settings.search_clones_in_all_schemes?,
-       :id => 'search_clones_in_all_schemes'
-    %>
-  </p>
-
-  <p>
-    <label for="settings_custom_path">
-      <%= l(:label_repositories_path) %>
-    </label>
-    <%= text_field_tag "settings[custom_path]",
-                       RedmineGitMirror::Settings.custom_path,
-                       :placeholder => RedmineGitMirror::Settings.default_path,
-                       :id => 'settings_custom_path',
-                       :size => 100 %>
-  </p>
-
-</fieldset>
-
-<fieldset class="box tabular" id="git_mirror_schemas">
-  <legend><%= l(:label_permitted_url_schemes) %></legend>
-
-  <% {
-    'http'  => l(:label_http_git_example),
-    'https' => l(:label_https_git_example),
-    'ssh'   => l(:label_ssh_git_example),
-    'scp'   => l(:label_scp_git_example),
-  }.each do | key, url |%>
-    <label class="floating" title="<%= key %>">
-      <%= check_box_tag \
-            "settings[schemes][]", \
-            key, \
-            RedmineGitMirror::Settings.allowed_schemes.include?(key)
-      %>
-
-      <%= (sanitize url).sub(key, "<b>#{key}</b>").html_safe %>
-    </label>
+<fieldset class="box tabular">
+  <legend><%= l(:git_mirror_connections) %></legend>
+  <% RedmineGitMirror::Settings::PROVIDERS.each do |provider| %>
+    <% label = provider == 'github' ? 'GitHub' : 'GitLab' %>
+    <p>
+      <label><%= label %></label>
+      <strong><%= l(RedmineGitMirror::Settings.connected?(provider) ? :git_mirror_connected : :git_mirror_disconnected) %></strong>
+      <% if RedmineGitMirror::Oauth.configured?(provider) %>
+        <%= link_to l(:git_mirror_connect, provider: label), git_mirror_authorize_path(provider: provider), method: :post, class: 'button' %>
+      <% end %>
+      <% if RedmineGitMirror::Settings.connected?(provider) %>
+        <%= link_to l(:git_mirror_disconnect), git_mirror_disconnect_path(provider: provider), method: :post, class: 'button' %>
+      <% end %>
+    </p>
   <% end %>
-
+  <p><%= label_tag 'settings_gitlab_url', 'GitLab URL' %>
+    <%= text_field_tag 'settings[gitlab_url]', RedmineGitMirror::Settings[:gitlab_url], size: 60, id: 'settings_gitlab_url', placeholder: 'https://gitlab.example.com' %></p>
+  <details class="git-mirror-token-settings">
+    <summary><%= l(:git_mirror_use_pat) %></summary>
+    <% RedmineGitMirror::Settings::PROVIDERS.each do |provider| %>
+      <p><%= label_tag "settings_#{provider}_api_token", "#{provider == 'github' ? 'GitHub' : 'GitLab'} token" %>
+        <%= password_field_tag "settings[#{provider}_api_token]", nil, size: 60, id: "settings_#{provider}_api_token", autocomplete: 'new-password', placeholder: RedmineGitMirror::Settings["#{provider}_api_token"].to_s.empty? ? nil : '••••••••' %>
+        <em class="info"><%= l(provider == 'github' ? :git_mirror_github_permissions : :git_mirror_gitlab_permissions) %></em></p>
+    <% end %>
+    <p><%= l(:git_mirror_keep_token) %></p>
+  </details>
+  <p class="info"><%= l(:git_mirror_oauth_setup_note) %></p>
 </fieldset>
-<p><%= check_all_links 'git_mirror_schemas' %></p>
-
-<!-- End part of hack for valid html -->
-<%= '<div>'.html_safe %>
+<fieldset class="box tabular">
+  <legend><%= l(:git_mirror_storage) %></legend>
+  <p><%= label_tag 'settings_custom_path', 'Repositories Path' %>
+    <%= text_field_tag 'settings[custom_path]', RedmineGitMirror::Settings[:custom_path], id: 'settings_custom_path', size: 80, placeholder: RedmineGitMirror::Settings.default_path %>
+    <em class="info"><%= l(:git_mirror_storage_note) %></em></p>
+</fieldset>

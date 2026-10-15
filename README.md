@@ -1,64 +1,99 @@
-Redmine Git Mirror plugin [![CI](https://github.com/linniksa/redmine_git_mirror/actions/workflows/main.yml/badge.svg)](https://github.com/linniksa/redmine_git_mirror/actions/workflows/main.yml)
-==================
+# Redmine Git Mirror
 
-Adds ability to clone and fetch remote git repositories to redmine.
+Select a GitHub or GitLab repository and mirror it in Redmine. New repositories
+always use automatic setup: read-only SSH Deploy Key, initial fetch, changeset
+import and a signed push/tag webhook. There is no manual-key or webhook editor.
 
-## Key Features
-* Easy install (just clone to redmine plugins folder)
-* Webhooks integration (gitlab and custom)
-* Works well with enabled autofetch changesets setting and in mix with other scm types
-* Automatic deletes unreachable commits
+## Install
 
-# Install
+Install this directory as `plugins/redmine_git_mirror`, run `bundle install` and
+`bundle exec rake redmine:plugins:migrate RAILS_ENV=production`, then restart
+Redmine. Enable **Git Mirror** under **Administration → Settings → Repositories**.
+Redmine 5 or later, Git, OpenSSH and outbound HTTPS/SSH access are required.
 
-1. Install the plugin in Redmine’s `plugin` folder:
-    ```bash
-    cd [redmine-root]/plugins
-    git clone https://github.com/linniksa/redmine_git_mirror
-    ```
+## Connect
 
-2. From Redmine’s root directory, install the plugin's dependencies:
-    ```bash
-    cd [redmine-root]
-    bundle install --without development test
-    ```
+Under **Administration → Plugins → Git Mirror → Configure**, connect GitHub or
+GitLab. Connections are shared and can only be used by Redmine administrators.
+Repository managers can browse existing mirrors but cannot use shared credentials
+to create or reconfigure them.
 
-3. Restart redmine, and enable `Git Mirror` scm type at `redmine.site/settings?tab=repositories`
+### OAuth
 
-## Accessing private repositories
+Register an OAuth application once with each provider. Configure the following
+server environment variables and restart Redmine:
 
-At this moment only ssh access with redmine user ssh key is supported.
+| Provider | Variables | Callback URL |
+| --- | --- | --- |
+| GitHub.com | `GIT_MIRROR_GITHUB_CLIENT_ID`, `GIT_MIRROR_GITHUB_CLIENT_SECRET` | `https://REDMINE/git_mirror/oauth/github/callback` |
+| GitLab | `GIT_MIRROR_GITLAB_CLIENT_ID`, `GIT_MIRROR_GITLAB_CLIENT_SECRET` | `https://REDMINE/git_mirror/oauth/gitlab/callback` |
 
-# Fetching changes
+Use Redmine's configured hostname, protocol and installation subpath in callback
+URLs. GitLab applications must allow the `api` scope and use a confidential client.
+GitHub OAuth requests `repo` scope to manage Deploy Keys for private repositories;
+this scope also permits repository writes. GitHub organization approval may be
+required. Tokens are acquired by the **Connect** button; users do not copy them.
+The authorization flow uses session-bound, expiring state and PKCE S256. Expiring
+access tokens refresh automatically; rotated refresh tokens are stored under a
+DB lock. Client secrets remain in the server environment.
 
-This plugin supports 2 ways of fetching changes, via cronjob or via hooks.
-You can use only one or both of them together.
+OAuth setup references: [GitHub](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps),
+[GitLab](https://docs.gitlab.com/api/oauth2/).
 
-## Cronjob
+### Existing PAT connections
 
-Run ```./bin/rails runner "Repository::GitMirror.fetch"```, for example:
+Existing saved PATs continue to work. Alternatively, expand **Connect with a PAT**:
 
-    5,20,35,50 * * * * cd /usr/src/redmine && ./bin/rails runner "Repository::GitMirror.fetch"  -e production >> log/cron_rake.log 2>&1
+- GitHub: fine-grained PAT with **Administration: Read and write** and
+  **Webhooks: Read and write** for the selected repositories.
+- GitLab: token with `api` scope and Maintainer or higher access; configure its
+  HTTPS instance URL, including an installation subpath if needed.
 
-## Hooks
+Leave token inputs blank to keep the connection. A new PAT replaces OAuth for
+that provider. Changing the GitLab instance clears its old credentials. Disconnect
+removes locally saved credentials; it does not revoke the provider's OAuth grant,
+Deploy Keys or webhooks. Tokens are encrypted with the Rails application key;
+keep that key stable across deployments. Provider-created Deploy Keys may be
+removed when the PAT/OAuth grant that created them is revoked.
 
-Hooks is preferred way because you can immediately see changes of you repository.
+## Create a mirror
 
-### GitLab hooks
+Open **Project → Settings → Repositories → New repository**, select **Git Mirror**,
+choose a connection, search the repository list, select a repository and create.
+The identifier is filled automatically and can be adjusted before creation.
+GitHub entries without administration access or archived entries cannot be selected;
+GitLab lists member projects with Maintainer or higher access. A token may still
+lack the API permissions needed for setup even if its user administers the repo.
 
-Use the repository-specific URL shown on the GitMirror repository form:
-`redmine.site/sys/git_mirror/webhook/[redmine-project-identifier]/[repository-identifier]`.
+The plugin fetches first, commits the Redmine repository and its secret, then
+registers the webhook. The provider's first ping therefore sees the committed row.
+If the initial fetch fails, creation fails. If webhook registration or changeset
+import fails after commit, the repository remains saved with a visible error and
+**Retry automatic setup** action. Retrying reuses its key and webhook. Concurrent
+Git fetches on the same mirror are serialized using a file lock.
 
-###### For system wide setup
+## Storage and updates
 
-Go to `gitlab.site/admin/hooks`, and select only `Repository update events` trigger.
+The only mirror behavior setting is **Repositories Path**. The default is
+`files/git_mirrors` under Redmine, outside the plugin code. It applies to new
+mirrors only; existing `root_url`, `ssh_key_path`, secrets and encrypted PATs are
+preserved. Old behavior toggles are ignored and removed on the next settings save.
+Do not use code deployment to remove existing ignored mirrors in the old
+plugin-local `repos/` directory.
 
-###### For per-project setup
+Pushes/tags sync through the repository-scoped webhook. An optional cron fallback
+is still available: `bundle exec rails runner -e production 'Repository::GitMirror.fetch'`.
+Deleting a repository removes the exact callback URL and its dedicated Deploy Key
+(matching both title and public key), then deletes the Redmine row. Its local
+mirror and generated SSH key files are removed after commit. Shared or manually
+managed SSH keys and unrelated provider resources are preserved. If remote cleanup
+fails, deletion is aborted with a visible error so it can be retried. Keep the
+connection active until mirrors have been deleted.
 
-Go to `gitlab.site/user/project/settings/integrations`, and select only `Push` and `Tags` events
+## Tests
 
-### GitHub hooks
+- `ruby test/standalone/auto_setup_test.rb`: isolated provider/OAuth and real Git/SSH tests.
+- Inside a test Redmine installation: `bundle exec ruby plugins/redmine_git_mirror/test/all.rb`.
 
-The same URL accepts both GitLab and GitHub push events. Select only the push event and use the generated repository secret.
-
-Don't worry about `Content type` both `application/json` and `application/x-www-form-urlencoded` are supported.
+GitHub.com and one configurable GitLab instance are supported. OAuth requires the
+application registration above; this plugin does not create provider applications.

@@ -1,25 +1,30 @@
 en:
-  button_copy_clone_url: Copy clone URL
-  button_view_on_github: View on GitHub
-  button_view_on_gitlab: View on GitLab
-  text_git_mirror_url_note: URL of remote repository.
-  text_git_mirror_ssh_key_path_note: Optional SSH private key path used only for this repository. Leave blank to use the default key.
-  label_git_mirror_ssh_public_key: SSH public key
-  text_git_mirror_ssh_public_key_note: Add this public key as a read-only Deploy key to the remote repository. The private key is never displayed.
-  button_git_mirror_generate_ssh_key: Generate SSH key
-  button_git_mirror_copy: Copy
-  text_git_mirror_copied: Copied
-  text_git_mirror_generating_ssh_key: Generating SSH key...
-  text_git_mirror_generated_ssh_key: SSH key generated
-  label_git_mirror_webhook_urls: Webhook URL (GitLab / GitHub)
-  button_git_mirror_generate_webhook_secret: Generate webhook secret
-  text_git_mirror_webhook_secret_note: Use this same value in the GitLab Secret token or GitHub webhook secret field.
-  label_allow_users_to_change_url: Allow users to change URL (risky)
-  label_prevent_adding_same_remove_url_twice: Prevent adding same remote url twice
-  label_search_for_clones_in_all_url_schemes: Search for clones in all url schemes
-  label_repositories_path: 'Repositories Path'
-  label_permitted_url_schemes: Permitted url schemes
-  label_http_git_example: "http://site/project.git"
-  label_https_git_example: "https://site/project.git"
-  label_ssh_git_example: "ssh://site/project.git"
-  label_scp_git_example: "git@site:project.git"
+  git_mirror_connections: Connections
+  git_mirror_connected: Connected
+  git_mirror_disconnected: Not connected
+  git_mirror_connect: 'Connect to %{provider}'
+  git_mirror_disconnect: Disconnect
+  git_mirror_use_pat: Connect with a PAT
+  git_mirror_github_permissions: Requires Administration and Webhooks Read and write permissions for the target repositories.
+  git_mirror_gitlab_permissions: Requires api scope and at least Maintainer access to the target projects.
+  git_mirror_keep_token: Leave blank to keep the connection. Entering a PAT replaces the OAuth connection.
+  git_mirror_oauth_setup_note: OAuth connections require initial OAuth application configuration on the server.
+  git_mirror_storage: Storage
+  git_mirror_storage_note: Used for new mirrors. Existing mirrors are not moved.
+  git_mirror_provider: Provider
+  git_mirror_search_placeholder: Search by repository, organization or group
+  git_mirror_loading: Loading repositories…
+  git_mirror_empty: No matching repositories.
+  git_mirror_unavailable: No administration access or archived
+  git_mirror_admin_required: Automatic setup requires a Redmine administrator.
+  git_mirror_connect_first: Connect to GitHub or GitLab in the Git Mirror settings first.
+  git_mirror_javascript_required: Enable JavaScript to select a repository.
+  git_mirror_already_added: is already mirrored in this project.
+  git_mirror_setup_failed: 'Automatic setup failed: %{message}'
+  git_mirror_setup_pending: 'Webhook setup or changeset import is incomplete: %{message}'
+  git_mirror_import_failed: Operation failed. Check the server log and retry.
+  git_mirror_retry: Retry automatic setup
+  git_mirror_setup_complete: Automatic setup completed.
+  git_mirror_view_remote: Open remote
+  git_mirror_delete_failed: 'The repository was kept because remote cleanup failed: %{message}'
+  git_mirror_deleted: Repository and dedicated Deploy Key/webhook removed.

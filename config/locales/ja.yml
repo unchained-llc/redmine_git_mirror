@@ -1,12 +1,30 @@
 ja:
-  text_git_mirror_ssh_key_path_note: このリポジトリ専用のSSH秘密鍵ファイルのパス。空欄の場合はデフォルト鍵を使用します。
-  label_git_mirror_ssh_public_key: SSH公開鍵
-  text_git_mirror_ssh_public_key_note: この公開鍵をリモートリポジトリの読み取り専用Deploy keyとして登録してください。秘密鍵は表示されません。
-  button_git_mirror_generate_ssh_key: SSH鍵を生成
-  button_git_mirror_copy: コピー
-  text_git_mirror_copied: コピーしました
-  text_git_mirror_generating_ssh_key: SSH鍵を生成中...
-  text_git_mirror_generated_ssh_key: SSH鍵を生成しました
-  label_git_mirror_webhook_urls: Webhook URL（GitLab / GitHub）
-  button_git_mirror_generate_webhook_secret: Webhook secretを生成
-  text_git_mirror_webhook_secret_note: GitLabのSecret token、またはGitHub Webhook secretに同じ値を設定してください。
+  git_mirror_connections: 接続
+  git_mirror_connected: 接続済み
+  git_mirror_disconnected: 未接続
+  git_mirror_connect: '%{provider}に接続'
+  git_mirror_disconnect: 接続を解除
+  git_mirror_use_pat: PATで接続する
+  git_mirror_github_permissions: 対象リポジトリのAdministrationとWebhooksにRead and writeが必要です。
+  git_mirror_gitlab_permissions: apiスコープと、対象プロジェクトのMaintainer以上の権限が必要です。
+  git_mirror_keep_token: 空欄で保存すると現在の接続を維持します。PATを入力するとOAuth接続を置き換えます。
+  git_mirror_oauth_setup_note: OAuth接続には、サーバーでOAuthアプリの初期設定が必要です。
+  git_mirror_storage: 保存先
+  git_mirror_storage_note: 新しいミラーの保存先です。既存のミラーは移動しません。
+  git_mirror_provider: 接続先
+  git_mirror_search_placeholder: リポジトリ名・組織・グループで検索
+  git_mirror_loading: リポジトリを取得中…
+  git_mirror_empty: 該当するリポジトリがありません。
+  git_mirror_unavailable: 管理権限なし・アーカイブ済み
+  git_mirror_admin_required: リポジトリの自動設定にはRedmine管理者権限が必要です。
+  git_mirror_connect_first: 先にGit Mirrorの設定でGitHubまたはGitLabに接続してください。
+  git_mirror_javascript_required: リポジトリの選択にはJavaScriptが必要です。
+  git_mirror_already_added: はこのプロジェクトに登録済みです。
+  git_mirror_setup_failed: '自動設定に失敗しました：%{message}'
+  git_mirror_setup_pending: 'Webhook登録または変更履歴の取り込みが未完了です：%{message}'
+  git_mirror_import_failed: 処理に失敗しました。サーバーログを確認して再試行してください。
+  git_mirror_retry: 自動設定を再試行
+  git_mirror_setup_complete: 自動設定が完了しました。
+  git_mirror_view_remote: リモートを開く
+  git_mirror_delete_failed: '接続先の削除に失敗したため、リポジトリを残しました：%{message}'
+  git_mirror_deleted: リポジトリと専用のDeploy Key・Webhookを削除しました。
